@@ -1,53 +1,104 @@
-# Kahoot Answer Bot
-A bot that takes the name or ID of a kahoot and gets a perfect score with the nickname of your choosing.
+# Hướng Dẫn Chạy Bot Kahoot
 
-*This project was started by [reteps](https://github.com/reteps/kbot) but is has been broken for quite a while, so I forked it and made it work.*
+## Yêu cầu
 
-## Features
-The program intercepts and pretends to be a kahoot client. After receiving quiz name from host, looks up answers for quiz and uses them.
-- Search by quiz name (requires login) or ID
-- 2FA compatible
+- Windows 10/11
+- Python 3.9+ đã cài sẵn và thêm vào PATH
 
-## Installation
-- [ ] Optional: Make a Kahoot Account if you don't have the Kahoot's ID and want to search for a Kahoot by name
-- [ ] Install Python3.9
-	
-  On Windows visit `https://www.python.org/downloads/windows/`
-	- Click latest Python 3.9 release
-	- Scroll down to the bottom to the section titled "Files"
-	- Click the Windows Installer (64-bit) link to download the ".exe"
-	- In File Explorer right click the file and click "Run as Administrator"
-	- Check the boxes "Install launcher for all users (recommended)" and "Install Python 3.9 to path"
-	
-	On macOS 11+ (Intel) and macOS 11+ (Apple Sillicon) visit "`https://www.python.org/downloads/macos/`"
-	- Click latest Python 3.9 release
-	- Scroll down to the bottom to the section titled "Files"
-	- Click the macOS 64-bit universal2 installer link to download the ".pkg"
-	- Run the downloaded ".pkg"
-	
-    On Debian GNU/Linux 11+ based distros:
-    - `sudo apt update`
-    - `sudo apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libsqlite3-dev libreadline-dev libffi-dev curl libbz2-dev`
-    - `wget https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz`
-    - `tar -xf Python-3.9.7.tgz`
-    - `cd Python-3.9.7`
-    - `./configure --enable-optimizations`
-    - `make`
-    - `sudo make altinstall`
+---
 
-   On Arch Linux based distros run:
-	- `sudo pacman -S --needed base-devel git`
- 	- `git clone https://aur.archlinux.org/python39.git`
-  	- `cd python39`
-  	- `makepkg -si`
-   
-- [ ] Download and unzip or clone this repo
-	- https://github.com/Raymo111/kahoot-answer-bot/archive/master.zip
-	- `git clone https://github.com/Raymo111/kahoot-answer-bot.git`
-- [ ] Install Dependencies
-	- `python3.9 -m pip install -r requirements.txt`
- 
-On other Linux based distros install python3.9 from your package manager.
+## Cài đặt lần đầu (chỉ làm 1 lần)
+
+Mở PowerShell trong thư mục `bot-kahoot`, chạy lần lượt:
+
+```powershell
+# Tạo môi trường ảo
+python -m venv .venv
+
+# Kích hoạt môi trường ảo
+.venv\Scripts\Activate.ps1
+
+# Cài thư viện
+pip install -r requirements.txt
+
+# Cài trình duyệt Playwright
+playwright install chromium
+```
+
+---
+
+## Cách dùng mỗi lần chơi
+
+### Bước 1 — Lấy Quiz UUID
+
+Truy cập link game của giáo viên, ví dụ:
+```
+https://play.kahoot.it/v2/lobby?quizId=e438585b-d212-4eca-a44a-beef8a904adb
+```
+Phần UUID chính là dãy ký tự sau `?quizId=`:
+```
+e438585b-d212-4eca-a44a-beef8a904adb
+```
+
+### Bước 2 — Lấy Game PIN
+
+Khi giáo viên mở game, sẽ hiện PIN trên màn hình, ví dụ `7451583`.
+
+### Bước 3 — Chạy bot
+
+Mở PowerShell, kích hoạt venv rồi chạy:
+
+```powershell
+.venv\Scripts\Activate.ps1
+
+python pw_bot.py <PIN> <UUID>
+```
+
+**Ví dụ thực tế:**
+```powershell
+python pw_bot.py 7451583 e438585b-d212-4eca-a44a-beef8a904adb
+```
+
+Tên mặc định sẽ tự điền là **Phạm Nhật Khánh**, **Phạm Khánh**, hoặc **Nhật Khánh** (chọn ngẫu nhiên).
+
+---
+
+## Tùy chọn thêm
+
+| Tùy chọn | Ý nghĩa |
+|---|---|
+| `--headless` | Chạy ẩn, không hiện cửa sổ trình duyệt |
+| `--debug` | In chi tiết quá trình xử lý |
+
+```powershell
+# Chạy ẩn
+python pw_bot.py 7451583 e438585b-d212-4eca-a44a-beef8a904adb --headless
+
+# Chạy với tên tùy chỉnh
+python pw_bot.py 7451583 e438585b-d212-4eca-a44a-beef8a904adb "Nguyễn Văn A"
+```
+
+---
+
+## Kiểm tra quiz có dùng được không
+
+Nếu không chắc quiz của thầy/cô có công khai không, chạy lệnh này:
+
+```powershell
+python -c "import requests; r = requests.get('https://create.kahoot.it/rest/kahoots/<UUID>', timeout=10); print('OK' if r.status_code==200 else 'PRIVATE - không lấy được đáp án')"
+```
+
+- Hiện `OK` → bot sẽ trả lời đúng 100%
+- Hiện `PRIVATE` → quiz bị ẩn, bot không lấy được đáp án
+
+---
+
+## Lưu ý
+
+- Trình duyệt sẽ tự mở và chơi, **đừng đóng cửa sổ** trong khi bot đang chạy
+- Chỉ dùng khi quiz ở chế độ **Public** thì mới lấy được đáp án
+- Nếu gặp lỗi `ExecutionPolicy`, chạy lệnh này trước: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
 
 ## Usage
 Open a terminal (Command Prompt on Windows) and navigate to the directory (folder) containing kbot. Then use the following command, replacing `[options]` with any options you want to use (listed below).

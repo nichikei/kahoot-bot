@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Kahoot Answer Bot - Playwright (CHỈ CẦN PIN)
-Bot tự vào lobby, intercept WebSocket để lấy Quiz ID,
-tra đáp án và tự động chọn đáp án đúng.
+Kahoot Answer Bot - Playwright
+Nhập PIN + Quiz UUID → tự động vào game và trả lời đáp án đúng.
 
-Chạy: python pw_bot.py <PIN> [nickname]
-Ví dụ: python pw_bot.py 1466590
-        python pw_bot.py 1466590 myname
+Chạy: python pw_bot.py <PIN> <QUIZ_UUID> [nickname]
+Ví dụ: python pw_bot.py 1466590 2ccff0a5-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        python pw_bot.py 1466590 2ccff0a5-xxxx-xxxx-xxxx-xxxxxxxxxxxx myname
 """
 
 import sys
@@ -21,8 +20,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def random_nick(base="bot"):
-    return f"{base}{''.join(random.choices(string.digits, k=4))}"
+NICKNAMES = ["Phạm Nhật Khánh", "Phạm Khánh", "Nhật Khánh"]
+
+def random_nick():
+    return random.choice(NICKNAMES)
 
 
 def get_answers_by_id(quiz_id: str) -> list:
@@ -68,17 +69,22 @@ COLORS = {0: "ĐỎ", 1: "XANH", 2: "VÀNG", 3: "LÁ"}
 
 
 # ── Main Bot ─────────────────────────────────────────────────────────────────
-def run_bot(pin: str, nickname: str, headless: bool = False, debug: bool = False):
+def run_bot(pin: str, quiz_id: str, nickname: str, headless: bool = False, debug: bool = False):
     print(f"\n{'='*50}")
     print(f"  🎮 KAHOOT PLAYWRIGHT BOT")
     print(f"{'='*50}")
     print(f"  PIN       : {pin}")
+    print(f"  Quiz ID   : {quiz_id}")
     print(f"  Nickname  : {nickname}")
     print(f"  Mode      : {'headless' if headless else 'visible'}")
     print(f"{'='*50}\n")
 
-    answers = []
-    quiz_id_found = None
+    # Lấy đáp án ngay từ UUID
+    print("📥 Đang lấy đáp án từ Quiz ID...")
+    answers = get_answers_by_id(quiz_id)
+    if not answers:
+        print("⚠️  Không lấy được đáp án, bot sẽ chọn ngẫu nhiên.")
+
     quiz_counter = 0
     game_over = False
     game_started = False
@@ -98,12 +104,10 @@ def run_bot(pin: str, nickname: str, headless: bool = False, debug: bool = False
         )
         page = ctx.new_page()
 
-        # ── Intercept WebSocket để lấy Quiz ID ──
-        checked_uuids = set()
-
+        # ── Intercept WebSocket để theo dõi game state ──
         def on_ws(ws):
             def on_msg(payload):
-                nonlocal quiz_id_found, answers, game_over, game_started
+                nonlocal game_over, game_started
                 try:
                     if not isinstance(payload, str) or len(payload) < 10:
                         return
@@ -118,13 +122,10 @@ def run_bot(pin: str, nickname: str, headless: bool = False, debug: bool = False
                             data_str = json.dumps(item)
                             print(f"  [WS] {chan}: {data_str[:200]}")
 
-                        # Scan service channels
                         inner = item.get("data", {})
                         if not isinstance(inner, dict):
                             continue
 
-                        # Track game state via message IDs
-                        # 3=GAME_OVER, 9=START_QUIZ, 10=RESET_CONTROLLER
                         msg_id = inner.get("id", "")
                         if msg_id in (3, "3"):
                             game_over = True
@@ -135,41 +136,6 @@ def run_bot(pin: str, nickname: str, headless: bool = False, debug: bool = False
                         if msg_id in (10, "10"):
                             game_over = True
                             print("\n⚠️ [WS] Reset/Disconnect")
-
-                        content_str = inner.get("content", "")
-                        if not isinstance(content_str, str) or len(content_str) < 10:
-                            continue
-
-                        # Log START_QUIZ content chi tiết
-                        if debug and msg_id in (9, "9"):
-                            print(f"\n  [WS-FULL] START_QUIZ: {content_str[:1500]}\n")
-
-                        # Tìm UUID quiz trong WS messages
-                        if not quiz_id_found:
-                            uuids = re.findall(
-                                r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
-                                content_str, re.IGNORECASE
-                            )
-                            for uid in uuids:
-                                if quiz_id_found:
-                                    break
-                                if uid in checked_uuids:
-                                    continue
-                                checked_uuids.add(uid)
-                                try:
-                                    test_resp = requests.get(
-                                        f"https://create.kahoot.it/rest/kahoots/{uid}",
-                                        timeout=3
-                                    )
-                                    if test_resp.status_code == 200:
-                                        test_data = test_resp.json()
-                                        if 'questions' in test_data:
-                                            quiz_id_found = uid
-                                            print(f"\n🆔 Quiz ID: {uid}")
-                                            answers = get_answers_by_id(uid)
-                                            return
-                                except Exception:
-                                    pass
                 except Exception:
                     pass
 
@@ -401,12 +367,29 @@ if __name__ == "__main__":
     headless = "--headless" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
-    if len(args) >= 1:
+    if len(args) >= 2:
         pin = args[0].replace(" ", "")
-        nickname = args[1] if len(args) >= 2 else random_nick()
+        quiz_id = args[1].strip()
+        nickname = args[2] if len(args) >= 3 else random_nick()
+    elif len(args) == 1:
+        pin = args[0].replace(" ", "")
+        quiz_id = input("🆔 Nhập Quiz UUID: ").strip()
+        nick_in = input("👤 Nickname (Enter để dùng tên mặc định): ").strip()
+        nickname = nick_in if nick_in else random_nick()
     else:
         pin = input("🔢 Nhập Game PIN: ").strip().replace(" ", "")
-        nick_in = input("👤 Nickname (Enter=random): ").strip()
+        quiz_id = input("🆔 Nhập Quiz UUID: ").strip()
+        nick_in = input("👤 Nickname (Enter để dùng tên mặc định): ").strip()
         nickname = nick_in if nick_in else random_nick()
 
-    run_bot(pin, nickname, headless=headless, debug=debug)
+    # Validate UUID format
+    uuid_match = re.search(
+        r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+        quiz_id, re.IGNORECASE
+    )
+    if not uuid_match:
+        print("❌ Quiz UUID không hợp lệ!")
+        sys.exit(1)
+    quiz_id = uuid_match.group(0)
+
+    run_bot(pin, quiz_id, nickname, headless=headless, debug=debug)
